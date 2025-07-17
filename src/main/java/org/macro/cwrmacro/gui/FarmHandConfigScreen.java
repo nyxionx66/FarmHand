@@ -4,10 +4,12 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.tooltip.Tooltip;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.widget.CyclingButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import org.macro.cwrmacro.config.FarmHandConfig;
+import org.macro.cwrmacro.module.AutoSellModule;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,7 +18,7 @@ import java.util.regex.Pattern;
 public class FarmHandConfigScreen extends Screen {
     private final Screen parent;
     private final FarmHandConfig config;
-    private final FarmHandConfig tempConfig; // Temporary config for changes
+    private final FarmHandConfig tempConfig;
 
     // UI Elements
     private ButtonWidget masterToggleButton;
@@ -24,19 +26,23 @@ public class FarmHandConfigScreen extends Screen {
     private ButtonWidget triggerBotToggleButton;
     private TextFieldWidget autoSellItemField;
     private TextFieldWidget triggerBotEntityField;
+    private TextFieldWidget autoSellDelayField;
+    private TextFieldWidget inventoryThresholdField;
     private ButtonWidget doneButton;
     private ButtonWidget cancelButton;
     private ButtonWidget resetButton;
+    private ButtonWidget statusButton;
 
     // UI Layout Constants
     private static final int BUTTON_WIDTH = 200;
     private static final int BUTTON_HEIGHT = 20;
     private static final int FIELD_WIDTH = 200;
     private static final int FIELD_HEIGHT = 20;
+    private static final int SMALL_FIELD_WIDTH = 80;
     private static final int ELEMENT_SPACING = 5;
     private static final int SECTION_SPACING = 15;
-    private static final int TOP_MARGIN = 40;
-    private static final int BOTTOM_MARGIN = 30;
+    private static final int TOP_MARGIN = 30;
+    private static final int BOTTOM_MARGIN = 40;
 
     // Colors
     private static final int BACKGROUND_COLOR = 0x88000000;
@@ -49,6 +55,7 @@ public class FarmHandConfigScreen extends Screen {
 
     // Validation
     private static final Pattern ID_PATTERN = Pattern.compile("^[a-z0-9_]+:[a-z0-9_/]+$");
+    private static final Pattern NUMBER_PATTERN = Pattern.compile("^\\d+$");
 
     // State
     private final List<ValidationError> validationErrors = new ArrayList<>();
@@ -62,7 +69,7 @@ public class FarmHandConfigScreen extends Screen {
         super(Text.literal("FarmHand Configuration"));
         this.parent = parent;
         this.config = FarmHandConfig.getInstance();
-        this.tempConfig = config.copy(); // Assuming you add a copy method to your config
+        this.tempConfig = config.copy();
     }
 
     @Override
@@ -107,13 +114,13 @@ public class FarmHandConfigScreen extends Screen {
                             markAsChanged();
                         })
                 .dimensions(centerX - BUTTON_WIDTH / 2, currentY, BUTTON_WIDTH, BUTTON_HEIGHT)
-                .tooltip(Tooltip.of(Text.literal("Automatically sell specified items")))
+                .tooltip(Tooltip.of(Text.literal("Automatically sell items using /sell hand command")))
                 .build();
         this.addDrawableChild(autoSellToggleButton);
         currentY += BUTTON_HEIGHT + ELEMENT_SPACING;
 
         // Item ID field
-        currentY += 5; // Extra spacing for label
+        currentY += 5;
         this.autoSellItemField = new TextFieldWidget(
                 this.textRenderer,
                 centerX - FIELD_WIDTH / 2,
@@ -129,7 +136,49 @@ public class FarmHandConfigScreen extends Screen {
             markAsChanged();
         });
         this.addDrawableChild(autoSellItemField);
-        currentY += FIELD_HEIGHT + 20 + SECTION_SPACING;
+        currentY += FIELD_HEIGHT + 25;
+
+        // Delay and Threshold fields (side by side)
+        this.autoSellDelayField = new TextFieldWidget(
+                this.textRenderer,
+                centerX - FIELD_WIDTH / 2,
+                currentY + 15,
+                SMALL_FIELD_WIDTH,
+                FIELD_HEIGHT,
+                Text.literal("Delay (ms)"));
+        this.autoSellDelayField.setMaxLength(6);
+        this.autoSellDelayField.setText(String.valueOf(tempConfig.autoSellDelay));
+        this.autoSellDelayField.setChangedListener(text -> {
+            try {
+                tempConfig.autoSellDelay = Integer.parseInt(text);
+                validateField("autoSellDelay", text, "Delay");
+                markAsChanged();
+            } catch (NumberFormatException e) {
+                validateField("autoSellDelay", text, "Delay");
+            }
+        });
+        this.addDrawableChild(autoSellDelayField);
+
+        this.inventoryThresholdField = new TextFieldWidget(
+                this.textRenderer,
+                centerX + 20,
+                currentY + 15,
+                SMALL_FIELD_WIDTH,
+                FIELD_HEIGHT,
+                Text.literal("Inventory Threshold"));
+        this.inventoryThresholdField.setMaxLength(2);
+        this.inventoryThresholdField.setText(String.valueOf(tempConfig.inventoryThreshold));
+        this.inventoryThresholdField.setChangedListener(text -> {
+            try {
+                tempConfig.inventoryThreshold = Integer.parseInt(text);
+                validateField("inventoryThreshold", text, "Threshold");
+                markAsChanged();
+            } catch (NumberFormatException e) {
+                validateField("inventoryThreshold", text, "Threshold");
+            }
+        });
+        this.addDrawableChild(inventoryThresholdField);
+        currentY += FIELD_HEIGHT + 30;
 
         // TriggerBot Section
         Section triggerBotSection = new Section("TriggerBot Module", currentY);
@@ -150,7 +199,7 @@ public class FarmHandConfigScreen extends Screen {
         currentY += BUTTON_HEIGHT + ELEMENT_SPACING;
 
         // Entity ID field
-        currentY += 5; // Extra spacing for label
+        currentY += 5;
         this.triggerBotEntityField = new TextFieldWidget(
                 this.textRenderer,
                 centerX - FIELD_WIDTH / 2,
@@ -166,7 +215,17 @@ public class FarmHandConfigScreen extends Screen {
             markAsChanged();
         });
         this.addDrawableChild(triggerBotEntityField);
-        currentY += FIELD_HEIGHT + 40;
+        currentY += FIELD_HEIGHT + 35;
+
+        // Status button
+        this.statusButton = ButtonWidget.builder(
+                        Text.literal("Show Status"),
+                        button -> showStatus())
+                .dimensions(centerX - BUTTON_WIDTH / 2, currentY, BUTTON_WIDTH, BUTTON_HEIGHT)
+                .tooltip(Tooltip.of(Text.literal("Show current module status")))
+                .build();
+        this.addDrawableChild(statusButton);
+        currentY += BUTTON_HEIGHT + 25;
 
         // Action buttons
         createActionButtons(centerX, currentY);
@@ -212,10 +271,34 @@ public class FarmHandConfigScreen extends Screen {
     private void validateField(String fieldId, String value, String fieldName) {
         validationErrors.removeIf(e -> e.fieldId.equals(fieldId));
 
-        if (value.trim().isEmpty()) {
-            validationErrors.add(new ValidationError(fieldId, fieldName + " cannot be empty"));
-        } else if (!ID_PATTERN.matcher(value.toLowerCase()).matches()) {
-            validationErrors.add(new ValidationError(fieldId, "Invalid " + fieldName + " format (use namespace:name)"));
+        if (fieldId.equals("autoSellItem") || fieldId.equals("triggerBotEntity")) {
+            if (value.trim().isEmpty()) {
+                validationErrors.add(new ValidationError(fieldId, fieldName + " cannot be empty"));
+            } else if (!ID_PATTERN.matcher(value.toLowerCase()).matches()) {
+                validationErrors.add(new ValidationError(fieldId, "Invalid " + fieldName + " format (use namespace:name)"));
+            }
+        } else if (fieldId.equals("autoSellDelay")) {
+            if (value.trim().isEmpty()) {
+                validationErrors.add(new ValidationError(fieldId, "Delay cannot be empty"));
+            } else if (!NUMBER_PATTERN.matcher(value).matches()) {
+                validationErrors.add(new ValidationError(fieldId, "Delay must be a number"));
+            } else {
+                int delay = Integer.parseInt(value);
+                if (delay < 1000) {
+                    validationErrors.add(new ValidationError(fieldId, "Delay must be at least 1000ms"));
+                }
+            }
+        } else if (fieldId.equals("inventoryThreshold")) {
+            if (value.trim().isEmpty()) {
+                validationErrors.add(new ValidationError(fieldId, "Threshold cannot be empty"));
+            } else if (!NUMBER_PATTERN.matcher(value).matches()) {
+                validationErrors.add(new ValidationError(fieldId, "Threshold must be a number"));
+            } else {
+                int threshold = Integer.parseInt(value);
+                if (threshold < 1 || threshold > 36) {
+                    validationErrors.add(new ValidationError(fieldId, "Threshold must be between 1 and 36"));
+                }
+            }
         }
 
         updateButtonStates();
@@ -224,6 +307,8 @@ public class FarmHandConfigScreen extends Screen {
     private void validateAll() {
         validateField("autoSellItem", tempConfig.autoSellItemId, "Item ID");
         validateField("triggerBotEntity", tempConfig.triggerBotEntityId, "Entity ID");
+        validateField("autoSellDelay", String.valueOf(tempConfig.autoSellDelay), "Delay");
+        validateField("inventoryThreshold", String.valueOf(tempConfig.inventoryThreshold), "Threshold");
     }
 
     private void updateButtonStates() {
@@ -236,11 +321,20 @@ public class FarmHandConfigScreen extends Screen {
         hasUnsavedChanges = !tempConfig.equals(config);
     }
 
+    private void showStatus() {
+        if (client != null && client.player != null) {
+            String status = AutoSellModule.getStatusSummary();
+            client.player.sendMessage(Text.literal(status).formatted(Formatting.YELLOW), false);
+        }
+    }
+
     private void resetToDefaults() {
         tempConfig.resetToDefaults();
 
         autoSellItemField.setText(tempConfig.autoSellItemId);
         triggerBotEntityField.setText(tempConfig.triggerBotEntityId);
+        autoSellDelayField.setText(String.valueOf(tempConfig.autoSellDelay));
+        inventoryThresholdField.setText(String.valueOf(tempConfig.inventoryThreshold));
 
         masterToggleButton.setMessage(getToggleText("Master Toggle", tempConfig.enabled));
         autoSellToggleButton.setMessage(getToggleText("Auto-Sell", tempConfig.autoSellEnabled));
@@ -261,6 +355,8 @@ public class FarmHandConfigScreen extends Screen {
         config.triggerBotEnabled = tempConfig.triggerBotEnabled;
         config.autoSellItemId = tempConfig.autoSellItemId;
         config.triggerBotEntityId = tempConfig.triggerBotEntityId;
+        config.autoSellDelay = tempConfig.autoSellDelay;
+        config.inventoryThreshold = tempConfig.inventoryThreshold;
         config.save();
 
         hasUnsavedChanges = false;
@@ -286,8 +382,12 @@ public class FarmHandConfigScreen extends Screen {
         }
 
         // Render field labels
-        renderFieldLabel(context, "Item ID:", autoSellItemField.getY() - 15,
+        renderFieldLabel(context, "Item ID (hold to sell):", autoSellItemField.getY() - 15,
                 hasError("autoSellItem"));
+        renderFieldLabel(context, "Delay (ms):", autoSellDelayField.getY() - 15,
+                hasError("autoSellDelay"));
+        renderFieldLabel(context, "Threshold:", inventoryThresholdField.getY() - 15,
+                hasError("inventoryThreshold"));
         renderFieldLabel(context, "Entity ID:", triggerBotEntityField.getY() - 15,
                 hasError("triggerBotEntity"));
 
@@ -332,14 +432,31 @@ public class FarmHandConfigScreen extends Screen {
         // Render tooltips for text fields
         if (autoSellItemField.isMouseOver(mouseX, mouseY)) {
             context.drawTooltip(this.textRenderer, List.of(
-                    Text.literal("Example: minecraft:blaze_rod"),
+                    Text.literal("Item to hold when selling"),
+                    Text.literal("Example: minecraft:diamond"),
                     Text.literal("Format: namespace:item_name").formatted(Formatting.GRAY)
+            ), mouseX, mouseY);
+        }
+
+        if (autoSellDelayField.isMouseOver(mouseX, mouseY)) {
+            context.drawTooltip(this.textRenderer, List.of(
+                    Text.literal("Delay between sells in milliseconds"),
+                    Text.literal("Minimum: 1000ms (1 second)"),
+                    Text.literal("Recommended: 3000ms (3 seconds)").formatted(Formatting.GRAY)
+            ), mouseX, mouseY);
+        }
+
+        if (inventoryThresholdField.isMouseOver(mouseX, mouseY)) {
+            context.drawTooltip(this.textRenderer, List.of(
+                    Text.literal("Inventory fullness trigger (1-36)"),
+                    Text.literal("30 = sell when 30/36 slots full"),
+                    Text.literal("Higher = wait for fuller inventory").formatted(Formatting.GRAY)
             ), mouseX, mouseY);
         }
 
         if (triggerBotEntityField.isMouseOver(mouseX, mouseY)) {
             context.drawTooltip(this.textRenderer, List.of(
-                    Text.literal("Example: minecraft:blaze"),
+                    Text.literal("Example: minecraft:zombie"),
                     Text.literal("Format: namespace:entity_name").formatted(Formatting.GRAY)
             ), mouseX, mouseY);
         }
