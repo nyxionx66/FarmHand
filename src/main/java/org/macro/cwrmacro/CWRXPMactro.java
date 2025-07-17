@@ -31,6 +31,9 @@ public class CWRXPMactro implements ModInitializer {
 		// Register modules
 		AutoSellModule.register();
 		TriggerBotModule.register();
+		
+		// Register HUD
+		FarmHandHUD.register();
 
 		LOGGER.info("FarmHand mod initialized successfully!");
 	}
