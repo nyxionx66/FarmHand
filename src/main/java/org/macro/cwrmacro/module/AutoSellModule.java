@@ -25,20 +25,20 @@ public class AutoSellModule {
     private static final AtomicLong lastErrorTime = new AtomicLong(0);
 
     // Configuration-driven constants
-    private static final long DEFAULT_COOLDOWN_MS = 5000; // 5 second default cooldown
-    private static final long ERROR_COOLDOWN_MS = 10000; // 10 second cooldown after errors
-    private static final int MAX_RETRIES = 3;
-    private static final int INVENTORY_FULL_THRESHOLD = 32; // Trigger when 32/36 slots are full
+    private static final long DEFAULT_COOLDOWN_MS = 3000; // 3 second default cooldown
+    private static final long ERROR_COOLDOWN_MS = 5000; // 5 second cooldown after errors
+    private static final int MAX_RETRIES = 2;
+    private static final int INVENTORY_FULL_THRESHOLD = 30; // Trigger when 30/36 slots are full
 
     // Timing ranges for human-like behavior
-    private static final int[] SWITCH_DELAY_RANGE = {200, 500};
-    private static final int[] COMMAND_DELAY_RANGE = {300, 800};
-    private static final int[] RESTORE_DELAY_RANGE = {400, 700};
-    private static final int[] FINAL_DELAY_RANGE = {200, 500};
+    private static final int[] SWITCH_DELAY_RANGE = {100, 300};
+    private static final int[] COMMAND_DELAY_RANGE = {200, 500};
+    private static final int[] RESTORE_DELAY_RANGE = {150, 350};
 
     private static volatile boolean moduleEnabled = true;
     private static volatile String lastError = null;
     private static volatile long lastSuccessTime = 0;
+    private static volatile int debugTickCount = 0;
 
     public static void register() {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -54,6 +54,14 @@ public class AutoSellModule {
 
     private static void processTick(MinecraftClient client) {
         FarmHandConfig config = FarmHandConfig.getInstance();
+        
+        // Debug logging every 5 seconds (100 ticks)
+        debugTickCount++;
+        if (debugTickCount % 100 == 0 && config.enableLogging) {
+            debugTickCount = 0;
+            logDebug("AutoSell Status: Enabled=" + moduleEnabled + " ConfigEnabled=" + config.enabled + 
+                    " AutoSellEnabled=" + config.autoSellEnabled + " Processing=" + isProcessing.get());
+        }
 
         // Check if module is enabled
         if (!moduleEnabled || !config.enabled || !config.autoSellEnabled) {
@@ -65,7 +73,7 @@ public class AutoSellModule {
             return;
         }
 
-        // Check cooldown (use configured delay or default)
+        // Check cooldown
         long currentTime = System.currentTimeMillis();
         long cooldownMs = config.autoSellDelay > 0 ? config.autoSellDelay : DEFAULT_COOLDOWN_MS;
 
@@ -84,7 +92,8 @@ public class AutoSellModule {
         }
 
         // Check if inventory meets the threshold for selling
-        if (!shouldTriggerSell(player)) {
+        int filledSlots = countFilledInventorySlots(player);
+        if (filledSlots < INVENTORY_FULL_THRESHOLD) {
             return;
         }
 
@@ -92,19 +101,21 @@ public class AutoSellModule {
         int itemSlot = findItemInHotbar(player, config.autoSellItemId);
         if (itemSlot == -1) {
             if (config.enableLogging) {
-                logInfo("AutoSell item not found in hotbar: " + config.autoSellItemId);
+                logInfo("AutoSell item not found in hotbar: " + config.autoSellItemId + " (Inventory: " + filledSlots + "/36)");
             }
             return;
         }
 
         // Start the auto-sell process
+        if (config.enableLogging) {
+            logInfo("Starting auto-sell process (Inventory: " + filledSlots + "/36, Item slot: " + itemSlot + ")");
+        }
         startAutoSellProcess(client, player, itemSlot, config);
     }
 
-    private static boolean shouldTriggerSell(ClientPlayerEntity player) {
+    private static int countFilledInventorySlots(ClientPlayerEntity player) {
         int filledSlots = 0;
-        int totalSlots = 36; // Main inventory slots (9-44)
-
+        
         // Check main inventory slots (9-44, which is 36 slots)
         for (int i = 9; i < 45; i++) {
             ItemStack stack = player.getInventory().getStack(i);
@@ -113,13 +124,13 @@ public class AutoSellModule {
             }
         }
 
-        // Trigger when inventory is at threshold capacity
-        return filledSlots >= INVENTORY_FULL_THRESHOLD;
+        return filledSlots;
     }
 
     private static int findItemInHotbar(ClientPlayerEntity player, String itemId) {
         try {
             if (itemId == null || itemId.trim().isEmpty()) {
+                logError("Item ID is null or empty");
                 return -1;
             }
 
@@ -161,7 +172,6 @@ public class AutoSellModule {
         }
 
         lastProcessTime.set(System.currentTimeMillis());
-
         int originalSlot = player.getInventory().selectedSlot;
 
         CompletableFuture.runAsync(() -> {
@@ -178,7 +188,7 @@ public class AutoSellModule {
                         handleSuccess(config);
                     } else if (attempts < MAX_RETRIES) {
                         // Wait before retry
-                        Thread.sleep(1000 + ThreadLocalRandom.current().nextInt(1000));
+                        Thread.sleep(500 + ThreadLocalRandom.current().nextInt(500));
                     }
 
                 } catch (InterruptedException e) {
@@ -190,7 +200,7 @@ public class AutoSellModule {
 
                     if (attempts < MAX_RETRIES) {
                         try {
-                            Thread.sleep(2000); // Wait before retry
+                            Thread.sleep(1000); // Wait before retry
                         } catch (InterruptedException ie) {
                             Thread.currentThread().interrupt();
                             break;
@@ -225,12 +235,15 @@ public class AutoSellModule {
         // Human-like delay
         Thread.sleep(getRandomDelay(SWITCH_DELAY_RANGE));
 
-        // Step 2: Execute sell command
+        // Step 2: Execute sell command - FIXED: Use "/sell hand" instead of "/sell all"
         final boolean[] commandSent = {false};
         client.execute(() -> {
             if (client.player != null && client.player.networkHandler != null) {
-                client.player.networkHandler.sendChatCommand("sell all");
+                client.player.networkHandler.sendChatCommand("sell hand");
                 commandSent[0] = true;
+                if (config.enableLogging) {
+                    logInfo("Sent command: /sell hand");
+                }
             }
         });
 
@@ -250,7 +263,7 @@ public class AutoSellModule {
         });
 
         // Final delay to complete the sequence
-        Thread.sleep(getRandomDelay(FINAL_DELAY_RANGE));
+        Thread.sleep(getRandomDelay(RESTORE_DELAY_RANGE));
 
         return true;
     }
@@ -265,7 +278,7 @@ public class AutoSellModule {
         lastError = null;
 
         if (config.enableLogging) {
-            logInfo("Auto-sell completed successfully (Total: " + sellCount.get() + ")");
+            logInfo("Auto-sell completed successfully! (Total: " + sellCount.get() + ")");
         }
 
         // Play success sound if enabled
@@ -324,6 +337,10 @@ public class AutoSellModule {
 
     private static void logError(String message) {
         CWRXPMactro.LOGGER.error("[AutoSell] " + message);
+    }
+
+    private static void logDebug(String message) {
+        CWRXPMactro.LOGGER.info("[AutoSell Debug] " + message);
     }
 
     // Public API methods for monitoring and control
