@@ -3,19 +3,19 @@
 	"id": "cwr-xp-mactro",
 	"version": "${version}",
 	"name": "CWR XP Mactro",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"description": "FarmHand automation mod for Minecraft with AutoSell and TriggerBot features",
 	"authors": [
-		"Me!"
+		"FarmHand Team"
 	],
 	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
+		"homepage": "https://github.com/farmhand/cwr-xp-mactro",
+		"sources": "https://github.com/farmhand/cwr-xp-mactro"
 	},
-	"license": "CC0-1.0",
+	"license": "MIT",
 	"icon": "assets/cwr-xp-mactro/icon.png",
-	"environment": "*",
+	"environment": "client",
 	"entrypoints": {
-		"main": [
+		"client": [
 			"org.macro.cwrmacro.CWRXPMactro"
 		]
 	},
@@ -23,12 +23,21 @@
 		"cwr-xp-mactro.mixins.json"
 	],
 	"depends": {
-		"fabricloader": ">=0.16.14",
-		"minecraft": "~1.21.4",
-		"java": ">=21",
+		"fabricloader": ">=0.15.0",
+		"minecraft": ">=1.20.1",
+		"java": ">=17",
 		"fabric-api": "*"
 	},
+	"recommends": {
+		"fabric-api": ">=0.90.0"
+	},
 	"suggests": {
-		"another-mod": "*"
+		"modmenu": "*"
+	},
+	"custom": {
+		"modmenu": {
+			"badges": ["client"],
+			"parent": "fabric-api"
+		}
 	}
 }
