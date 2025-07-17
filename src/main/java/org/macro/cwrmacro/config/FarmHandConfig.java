@@ -21,18 +21,19 @@ public class FarmHandConfig {
     public long lastModified = System.currentTimeMillis();
 
     // Configuration fields with defaults
-    public boolean enabled = true; // CHANGED: Default to true for easier use
-    public boolean autoSellEnabled = true; // CHANGED: Default to true for easier use
-    public String autoSellItemId = "minecraft:diamond"; // CHANGED: More common item
+    public boolean enabled = true;
+    public boolean autoSellEnabled = true;
+    public String autoSellItemId = "minecraft:diamond";
     public boolean triggerBotEnabled = false;
-    public String triggerBotEntityId = "minecraft:zombie"; // CHANGED: More common entity
+    public String triggerBotEntityId = "minecraft:zombie";
 
-    // Advanced settings - IMPROVED: Better default values
-    public int autoSellDelay = 3000; // 3 seconds - reasonable default
-    public int triggerBotDelay = 500; // milliseconds
+    // Advanced settings
+    public int autoSellDelay = 3000; // 3 seconds
+    public int triggerBotDelay = 500; // DEPRECATED - use triggerBotSpeed instead
+    public int triggerBotSpeed = 0; // NEW: 0 = instant, higher = slower
     public boolean enableLogging = true;
     public boolean enableSounds = true;
-    public int inventoryThreshold = 30; // NEW: Configurable inventory threshold
+    public int inventoryThreshold = 30;
 
     private static FarmHandConfig instance;
     private boolean isDirty = false;
@@ -47,7 +48,6 @@ public class FarmHandConfig {
 
     /**
      * Create a deep copy of this configuration
-     * @return A new FarmHandConfig instance with copied values
      */
     public FarmHandConfig copy() {
         FarmHandConfig copy = new FarmHandConfig();
@@ -81,7 +81,7 @@ public class FarmHandConfig {
             } else {
                 CWRXPMactro.LOGGER.info("No configuration file found, creating with defaults");
                 resetToDefaults();
-                save(); // Create the file with defaults
+                save();
             }
         } catch (IOException e) {
             CWRXPMactro.LOGGER.error("Failed to read FarmHand config file", e);
@@ -99,11 +99,9 @@ public class FarmHandConfig {
      */
     public void save() {
         try {
-            // Update metadata
             lastModified = System.currentTimeMillis();
             configVersion = CONFIG_VERSION;
 
-            // Validate before saving
             if (!isValid()) {
                 CWRXPMactro.LOGGER.warn("Attempting to save invalid configuration, sanitizing first");
                 sanitizeConfig();
@@ -132,6 +130,7 @@ public class FarmHandConfig {
         triggerBotEntityId = "minecraft:zombie";
         autoSellDelay = 3000;
         triggerBotDelay = 500;
+        triggerBotSpeed = 0; // Instant by default
         enableLogging = true;
         enableSounds = true;
         inventoryThreshold = 30;
@@ -155,6 +154,7 @@ public class FarmHandConfig {
         this.triggerBotEntityId = other.triggerBotEntityId != null ? other.triggerBotEntityId : "minecraft:zombie";
         this.autoSellDelay = other.autoSellDelay > 0 ? other.autoSellDelay : 3000;
         this.triggerBotDelay = other.triggerBotDelay > 0 ? other.triggerBotDelay : 500;
+        this.triggerBotSpeed = other.triggerBotSpeed >= 0 ? other.triggerBotSpeed : 0;
         this.enableLogging = other.enableLogging;
         this.enableSounds = other.enableSounds;
         this.inventoryThreshold = other.inventoryThreshold > 0 ? other.inventoryThreshold : 30;
@@ -168,6 +168,7 @@ public class FarmHandConfig {
                 isValidEntityId(triggerBotEntityId) &&
                 autoSellDelay > 0 &&
                 triggerBotDelay > 0 &&
+                triggerBotSpeed >= 0 &&
                 inventoryThreshold > 0 && inventoryThreshold <= 36;
     }
 
@@ -191,6 +192,10 @@ public class FarmHandConfig {
             triggerBotDelay = 500;
         }
 
+        if (triggerBotSpeed < 0) {
+            triggerBotSpeed = 0;
+        }
+
         if (inventoryThreshold <= 0 || inventoryThreshold > 36) {
             inventoryThreshold = 30;
         }
@@ -204,7 +209,6 @@ public class FarmHandConfig {
             return false;
         }
 
-        // Basic validation: must contain namespace:name format
         String[] parts = itemId.split(":");
         if (parts.length != 2) {
             return false;
@@ -213,7 +217,6 @@ public class FarmHandConfig {
         String namespace = parts[0];
         String name = parts[1];
 
-        // Check for valid characters (lowercase letters, numbers, underscores, forward slashes)
         return namespace.matches("^[a-z0-9_]+$") &&
                 name.matches("^[a-z0-9_/]+$");
     }
@@ -226,7 +229,6 @@ public class FarmHandConfig {
             return false;
         }
 
-        // Basic validation: must contain namespace:name format
         String[] parts = entityId.split(":");
         if (parts.length != 2) {
             return false;
@@ -235,28 +237,18 @@ public class FarmHandConfig {
         String namespace = parts[0];
         String name = parts[1];
 
-        // Check for valid characters (lowercase letters, numbers, underscores, forward slashes)
         return namespace.matches("^[a-z0-9_]+$") &&
                 name.matches("^[a-z0-9_/]+$");
     }
 
-    /**
-     * Mark configuration as dirty (needs saving)
-     */
     public void markDirty() {
         isDirty = true;
     }
 
-    /**
-     * Check if configuration has unsaved changes
-     */
     public boolean isDirty() {
         return isDirty;
     }
 
-    /**
-     * Create a backup of the current configuration
-     */
     public void createBackup() {
         try {
             Path backupPath = CONFIG_PATH.getParent().resolve("farmhand.json.backup");
@@ -269,15 +261,12 @@ public class FarmHandConfig {
         }
     }
 
-    /**
-     * Restore from backup
-     */
     public void restoreFromBackup() {
         try {
             Path backupPath = CONFIG_PATH.getParent().resolve("farmhand.json.backup");
             if (Files.exists(backupPath)) {
                 Files.copy(backupPath, CONFIG_PATH);
-                load(); // Reload from the restored file
+                load();
                 CWRXPMactro.LOGGER.info("Configuration restored from backup");
             } else {
                 CWRXPMactro.LOGGER.warn("No backup file found");
@@ -287,12 +276,9 @@ public class FarmHandConfig {
         }
     }
 
-    /**
-     * Get configuration summary for debugging
-     */
     public String getConfigSummary() {
         return String.format(
-                "FarmHand Config [Version: %s, Master: %s, AutoSell: %s (%s, %dms), TriggerBot: %s (%s, %dms), Threshold: %d]",
+                "FarmHand Config [Version: %s, Master: %s, AutoSell: %s (%s, %dms), TriggerBot: %s (%s, %s), Threshold: %d]",
                 configVersion,
                 enabled ? "ON" : "OFF",
                 autoSellEnabled ? "ON" : "OFF",
@@ -300,7 +286,7 @@ public class FarmHandConfig {
                 autoSellDelay,
                 triggerBotEnabled ? "ON" : "OFF",
                 triggerBotEntityId,
-                triggerBotDelay,
+                triggerBotSpeed == 0 ? "INSTANT" : triggerBotSpeed + "ms",
                 inventoryThreshold
         );
     }
@@ -316,6 +302,7 @@ public class FarmHandConfig {
                 triggerBotEnabled == that.triggerBotEnabled &&
                 autoSellDelay == that.autoSellDelay &&
                 triggerBotDelay == that.triggerBotDelay &&
+                triggerBotSpeed == that.triggerBotSpeed &&
                 enableLogging == that.enableLogging &&
                 enableSounds == that.enableSounds &&
                 inventoryThreshold == that.inventoryThreshold &&
@@ -327,7 +314,7 @@ public class FarmHandConfig {
     public int hashCode() {
         return Objects.hash(enabled, autoSellEnabled, autoSellItemId,
                 triggerBotEnabled, triggerBotEntityId,
-                autoSellDelay, triggerBotDelay, enableLogging, enableSounds, inventoryThreshold);
+                autoSellDelay, triggerBotDelay, triggerBotSpeed, enableLogging, enableSounds, inventoryThreshold);
     }
 
     @Override
