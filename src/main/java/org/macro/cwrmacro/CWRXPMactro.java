@@ -2,6 +2,7 @@ package org.macro.cwrmacro;
 
 import net.fabricmc.api.ModInitializer;
 import org.macro.cwrmacro.config.FarmHandConfig;
+import org.macro.cwrmacro.hud.FarmHandHUD;
 import org.macro.cwrmacro.keybind.FarmHandKeybind;
 import org.macro.cwrmacro.module.AutoSellModule;
 import org.macro.cwrmacro.module.TriggerBotModule;
