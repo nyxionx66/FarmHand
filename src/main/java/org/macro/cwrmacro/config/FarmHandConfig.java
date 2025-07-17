@@ -9,18 +9,19 @@ import org.macro.cwrmacro.CWRXPMactro;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.Objects;
 
 public class FarmHandConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final Path CONFIG_PATH = FabricLoader.getInstance().getConfigDir().resolve("farmhand.json");
     private static final String CONFIG_VERSION = "1.0.0";
+    private static final String CONFIG_FILE_NAME = "farmhand.json";
 
     // Configuration metadata
     public String configVersion = CONFIG_VERSION;
     public long lastModified = System.currentTimeMillis();
 
-    // Configuration fields with defaults
+    // Configuration fields with safe defaults
     public boolean enabled = true;
     public boolean autoSellEnabled = true;
     public String autoSellItemId = "minecraft:diamond";
@@ -28,14 +29,15 @@ public class FarmHandConfig {
     public String triggerBotEntityId = "minecraft:zombie";
 
     // Advanced settings
-    public int autoSellDelay = 3000; // 3 seconds
-    public int triggerBotDelay = 500; // DEPRECATED - use triggerBotSpeed instead
-    public int triggerBotSpeed = 0; // NEW: 0 = instant, higher = slower
+    public int autoSellDelay = 3000;
+    public int triggerBotDelay = 500;
+    public int triggerBotSpeed = 0;
     public boolean enableLogging = true;
     public boolean enableSounds = true;
     public int inventoryThreshold = 30;
 
     private static FarmHandConfig instance;
+    private static Path configPath;
     private boolean isDirty = false;
 
     public static FarmHandConfig getInstance() {
@@ -44,6 +46,28 @@ public class FarmHandConfig {
             instance.load();
         }
         return instance;
+    }
+
+    /**
+     * Get config path with error handling
+     */
+    private static Path getConfigPath() {
+        if (configPath == null) {
+            try {
+                Path configDir = FabricLoader.getInstance().getConfigDir();
+                configPath = configDir.resolve(CONFIG_FILE_NAME);
+                
+                // Ensure config directory exists
+                if (!Files.exists(configDir)) {
+                    Files.createDirectories(configDir);
+                }
+            } catch (Exception e) {
+                CWRXPMactro.LOGGER.error("Failed to get config path, using fallback", e);
+                // Fallback to current directory
+                configPath = Path.of(System.getProperty("user.dir"), CONFIG_FILE_NAME);
+            }
+        }
+        return configPath;
     }
 
     /**
@@ -56,38 +80,51 @@ public class FarmHandConfig {
     }
 
     /**
-     * Load configuration from file
+     * Load configuration from file with comprehensive error handling
      */
     public void load() {
         try {
-            if (Files.exists(CONFIG_PATH)) {
-                String json = Files.readString(CONFIG_PATH);
-                FarmHandConfig loaded = GSON.fromJson(json, FarmHandConfig.class);
+            Path configFile = getConfigPath();
+            
+            if (Files.exists(configFile)) {
+                try {
+                    String json = Files.readString(configFile);
+                    if (json != null && !json.trim().isEmpty()) {
+                        FarmHandConfig loaded = GSON.fromJson(json, FarmHandConfig.class);
 
-                if (loaded != null) {
-                    copyFrom(loaded);
+                        if (loaded != null) {
+                            copyFrom(loaded);
 
-                    // Validate loaded configuration
-                    if (!isValid()) {
-                        CWRXPMactro.LOGGER.warn("Invalid configuration detected, using defaults for invalid fields");
-                        sanitizeConfig();
+                            // Validate loaded configuration
+                            if (!isValid()) {
+                                CWRXPMactro.LOGGER.warn("Invalid configuration detected, using defaults for invalid fields");
+                                sanitizeConfig();
+                            }
+
+                            CWRXPMactro.LOGGER.info("Configuration loaded successfully from: {}", configFile);
+                        } else {
+                            CWRXPMactro.LOGGER.warn("Configuration file is empty or corrupted, using defaults");
+                            resetToDefaults();
+                        }
+                    } else {
+                        CWRXPMactro.LOGGER.warn("Configuration file is empty, using defaults");
+                        resetToDefaults();
                     }
-
-                    CWRXPMactro.LOGGER.info("FarmHand configuration loaded successfully");
-                } else {
-                    CWRXPMactro.LOGGER.warn("Configuration file is empty or corrupted, using defaults");
+                } catch (JsonSyntaxException e) {
+                    CWRXPMactro.LOGGER.error("Invalid JSON in configuration file, using defaults", e);
+                    backupCorruptedConfig();
+                    resetToDefaults();
+                } catch (IOException e) {
+                    CWRXPMactro.LOGGER.error("Failed to read configuration file, using defaults", e);
                     resetToDefaults();
                 }
             } else {
                 CWRXPMactro.LOGGER.info("No configuration file found, creating with defaults");
                 resetToDefaults();
-                save();
+                save(); // Create the file with defaults
             }
-        } catch (IOException e) {
-            CWRXPMactro.LOGGER.error("Failed to read FarmHand config file", e);
-            resetToDefaults();
-        } catch (JsonSyntaxException e) {
-            CWRXPMactro.LOGGER.error("Invalid JSON in FarmHand config file", e);
+        } catch (Exception e) {
+            CWRXPMactro.LOGGER.error("Unexpected error loading configuration, using defaults", e);
             resetToDefaults();
         }
 
@@ -95,32 +132,44 @@ public class FarmHandConfig {
     }
 
     /**
-     * Save configuration to file
+     * Save configuration to file with error handling
      */
     public void save() {
         try {
+            // Update metadata
             lastModified = System.currentTimeMillis();
             configVersion = CONFIG_VERSION;
 
+            // Validate before saving
             if (!isValid()) {
                 CWRXPMactro.LOGGER.warn("Attempting to save invalid configuration, sanitizing first");
                 sanitizeConfig();
             }
 
+            Path configFile = getConfigPath();
             String json = GSON.toJson(this);
-            Files.createDirectories(CONFIG_PATH.getParent());
-            Files.writeString(CONFIG_PATH, json);
+            
+            // Ensure parent directory exists
+            Path parentDir = configFile.getParent();
+            if (parentDir != null && !Files.exists(parentDir)) {
+                Files.createDirectories(parentDir);
+            }
+            
+            // Write to temporary file first, then move (atomic operation)
+            Path tempFile = configFile.resolveSibling(configFile.getFileName() + ".tmp");
+            Files.writeString(tempFile, json);
+            Files.move(tempFile, configFile, StandardCopyOption.REPLACE_EXISTING);
 
             isDirty = false;
-            CWRXPMactro.LOGGER.info("FarmHand configuration saved successfully");
+            CWRXPMactro.LOGGER.info("Configuration saved successfully to: {}", configFile);
 
-        } catch (IOException e) {
-            CWRXPMactro.LOGGER.error("Failed to save FarmHand config", e);
+        } catch (Exception e) {
+            CWRXPMactro.LOGGER.error("Failed to save configuration", e);
         }
     }
 
     /**
-     * Reset all settings to default values
+     * Reset all settings to safe default values
      */
     public void resetToDefaults() {
         enabled = true;
@@ -130,7 +179,7 @@ public class FarmHandConfig {
         triggerBotEntityId = "minecraft:zombie";
         autoSellDelay = 3000;
         triggerBotDelay = 500;
-        triggerBotSpeed = 0; // Instant by default
+        triggerBotSpeed = 0;
         enableLogging = true;
         enableSounds = true;
         inventoryThreshold = 30;
@@ -138,13 +187,18 @@ public class FarmHandConfig {
         lastModified = System.currentTimeMillis();
 
         markDirty();
-        CWRXPMactro.LOGGER.info("FarmHand configuration reset to defaults");
+        CWRXPMactro.LOGGER.info("Configuration reset to defaults");
     }
 
     /**
-     * Copy values from another config instance
+     * Copy values from another config instance with null safety
      */
     public void copyFrom(FarmHandConfig other) {
+        if (other == null) {
+            resetToDefaults();
+            return;
+        }
+
         this.configVersion = other.configVersion != null ? other.configVersion : CONFIG_VERSION;
         this.lastModified = other.lastModified;
         this.enabled = other.enabled;
@@ -157,7 +211,7 @@ public class FarmHandConfig {
         this.triggerBotSpeed = other.triggerBotSpeed >= 0 ? other.triggerBotSpeed : 0;
         this.enableLogging = other.enableLogging;
         this.enableSounds = other.enableSounds;
-        this.inventoryThreshold = other.inventoryThreshold > 0 ? other.inventoryThreshold : 30;
+        this.inventoryThreshold = other.inventoryThreshold > 0 && other.inventoryThreshold <= 36 ? other.inventoryThreshold : 30;
     }
 
     /**
@@ -202,43 +256,67 @@ public class FarmHandConfig {
     }
 
     /**
-     * Validate item ID format
+     * Validate item ID format with null safety
      */
     public static boolean isValidItemId(String itemId) {
         if (itemId == null || itemId.trim().isEmpty()) {
             return false;
         }
 
-        String[] parts = itemId.split(":");
-        if (parts.length != 2) {
+        try {
+            String[] parts = itemId.split(":");
+            if (parts.length != 2) {
+                return false;
+            }
+
+            String namespace = parts[0];
+            String name = parts[1];
+
+            return namespace.matches("^[a-z0-9_]+$") &&
+                    name.matches("^[a-z0-9_/]+$");
+        } catch (Exception e) {
             return false;
         }
-
-        String namespace = parts[0];
-        String name = parts[1];
-
-        return namespace.matches("^[a-z0-9_]+$") &&
-                name.matches("^[a-z0-9_/]+$");
     }
 
     /**
-     * Validate entity ID format
+     * Validate entity ID format with null safety
      */
     public static boolean isValidEntityId(String entityId) {
         if (entityId == null || entityId.trim().isEmpty()) {
             return false;
         }
 
-        String[] parts = entityId.split(":");
-        if (parts.length != 2) {
+        try {
+            String[] parts = entityId.split(":");
+            if (parts.length != 2) {
+                return false;
+            }
+
+            String namespace = parts[0];
+            String name = parts[1];
+
+            return namespace.matches("^[a-z0-9_]+$") &&
+                    name.matches("^[a-z0-9_/]+$");
+        } catch (Exception e) {
             return false;
         }
+    }
 
-        String namespace = parts[0];
-        String name = parts[1];
-
-        return namespace.matches("^[a-z0-9_]+$") &&
-                name.matches("^[a-z0-9_/]+$");
+    /**
+     * Backup corrupted configuration file
+     */
+    private void backupCorruptedConfig() {
+        try {
+            Path configFile = getConfigPath();
+            if (Files.exists(configFile)) {
+                Path backupPath = configFile.resolveSibling(configFile.getFileName() + ".corrupted");
+                Files.copy(configFile, backupPath, StandardCopyOption.REPLACE_EXISTING);
+                CWRXPMactro.LOGGER.info("Corrupted configuration backed up to: {}", backupPath);
+            }
+        } catch (Exception e) {
+            CWRXPMactro.LOGGER.error("Failed to backup corrupted configuration", e);
+        }
     }
 
     public void markDirty() {
@@ -251,34 +329,37 @@ public class FarmHandConfig {
 
     public void createBackup() {
         try {
-            Path backupPath = CONFIG_PATH.getParent().resolve("farmhand.json.backup");
-            if (Files.exists(CONFIG_PATH)) {
-                Files.copy(CONFIG_PATH, backupPath);
-                CWRXPMactro.LOGGER.info("Configuration backup created at: " + backupPath);
+            Path configFile = getConfigPath();
+            if (Files.exists(configFile)) {
+                Path backupPath = configFile.resolveSibling(configFile.getFileName() + ".backup");
+                Files.copy(configFile, backupPath, StandardCopyOption.REPLACE_EXISTING);
+                CWRXPMactro.LOGGER.info("Configuration backup created at: {}", backupPath);
             }
-        } catch (IOException e) {
+        } catch (Exception e) {
             CWRXPMactro.LOGGER.error("Failed to create configuration backup", e);
         }
     }
 
     public void restoreFromBackup() {
         try {
-            Path backupPath = CONFIG_PATH.getParent().resolve("farmhand.json.backup");
+            Path configFile = getConfigPath();
+            Path backupPath = configFile.resolveSibling(configFile.getFileName() + ".backup");
             if (Files.exists(backupPath)) {
-                Files.copy(backupPath, CONFIG_PATH);
-                load();
+                Files.copy(backupPath, configFile, StandardCopyOption.REPLACE_EXISTING);
+                load(); // Reload from the restored file
                 CWRXPMactro.LOGGER.info("Configuration restored from backup");
             } else {
                 CWRXPMactro.LOGGER.warn("No backup file found");
             }
-        } catch (IOException e) {
+        } catch (Exception e) {
             CWRXPMactro.LOGGER.error("Failed to restore configuration from backup", e);
         }
     }
 
     public String getConfigSummary() {
         return String.format(
-                "FarmHand Config [Version: %s, Master: %s, AutoSell: %s (%s, %dms), TriggerBot: %s (%s, %s), Threshold: %d]",
+                "%s Config [Version: %s, Master: %s, AutoSell: %s (%s, %dms), TriggerBot: %s (%s, %s), Threshold: %d]",
+                CWRXPMactro.MOD_NAME,
                 configVersion,
                 enabled ? "ON" : "OFF",
                 autoSellEnabled ? "ON" : "OFF",
