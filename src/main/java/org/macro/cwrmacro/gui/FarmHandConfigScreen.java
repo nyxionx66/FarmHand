@@ -209,24 +209,11 @@ public class FarmHandConfigScreen extends Screen {
         this.addDrawableChild(triggerBotEntityField);
         currentY += FIELD_HEIGHT + ELEMENT_SPACING;
 
-        // Speed Slider
+        // Speed Slider - FIXED: Use proper constructor
         addFieldLabel("Speed (0=Instant):");
-        this.triggerBotSpeedSlider = new SliderWidget(
+        this.triggerBotSpeedSlider = new TriggerBotSpeedSlider(
                 centerX - fieldWidth / 2, currentY, fieldWidth, BUTTON_HEIGHT,
-                Text.literal("Speed: " + getSpeedText(tempConfig.triggerBotSpeed)),
-                tempConfig.triggerBotSpeed / 1000.0) {
-            @Override
-            protected void updateMessage() {
-                int speed = (int) (this.value * 1000);
-                this.setMessage(Text.literal("Speed: " + getSpeedText(speed)));
-            }
-
-            @Override
-            protected void applyValue() {
-                tempConfig.triggerBotSpeed = (int) (this.value * 1000);
-                markAsChanged();
-            }
-        };
+                tempConfig.triggerBotSpeed / 1000.0);
         this.addDrawableChild(triggerBotSpeedSlider);
         currentY += BUTTON_HEIGHT + ELEMENT_SPACING;
 
@@ -245,6 +232,25 @@ public class FarmHandConfigScreen extends Screen {
 
         // Initial validation
         validateAll();
+    }
+
+    // Custom slider class to handle speed settings
+    private class TriggerBotSpeedSlider extends SliderWidget {
+        public TriggerBotSpeedSlider(int x, int y, int width, int height, double value) {
+            super(x, y, width, height, Text.literal("Speed: " + getSpeedText((int)(value * 1000))), value);
+        }
+
+        @Override
+        protected void updateMessage() {
+            int speed = (int) (this.value * 1000);
+            this.setMessage(Text.literal("Speed: " + getSpeedText(speed)));
+        }
+
+        @Override
+        protected void applyValue() {
+            tempConfig.triggerBotSpeed = (int) (this.value * 1000);
+            markAsChanged();
+        }
     }
 
     private void addSection(String title) {
@@ -394,7 +400,15 @@ public class FarmHandConfigScreen extends Screen {
         triggerBotEntityField.setText(tempConfig.triggerBotEntityId);
         autoSellDelayField.setText(String.valueOf(tempConfig.autoSellDelay));
         inventoryThresholdField.setText(String.valueOf(tempConfig.inventoryThreshold));
-        triggerBotSpeedSlider.setValue(tempConfig.triggerBotSpeed / 1000.0);
+        // Create new slider with updated value
+        this.remove(triggerBotSpeedSlider);
+        this.triggerBotSpeedSlider = new TriggerBotSpeedSlider(
+                centerX - fieldWidth / 2, 
+                triggerBotSpeedSlider.getY(), 
+                fieldWidth, 
+                BUTTON_HEIGHT,
+                tempConfig.triggerBotSpeed / 1000.0);
+        this.addDrawableChild(triggerBotSpeedSlider);
 
         masterToggleButton.setMessage(getToggleText("Master", tempConfig.enabled));
         autoSellToggleButton.setMessage(getToggleText("Auto-Sell", tempConfig.autoSellEnabled));
