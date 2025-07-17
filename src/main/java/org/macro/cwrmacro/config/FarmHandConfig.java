@@ -21,17 +21,18 @@ public class FarmHandConfig {
     public long lastModified = System.currentTimeMillis();
 
     // Configuration fields with defaults
-    public boolean enabled = false;
-    public boolean autoSellEnabled = false;
-    public String autoSellItemId = "minecraft:blaze_rod";
+    public boolean enabled = true; // CHANGED: Default to true for easier use
+    public boolean autoSellEnabled = true; // CHANGED: Default to true for easier use
+    public String autoSellItemId = "minecraft:diamond"; // CHANGED: More common item
     public boolean triggerBotEnabled = false;
-    public String triggerBotEntityId = "minecraft:blaze";
+    public String triggerBotEntityId = "minecraft:zombie"; // CHANGED: More common entity
 
-    // Advanced settings
-    public int autoSellDelay = 1000; // milliseconds
+    // Advanced settings - IMPROVED: Better default values
+    public int autoSellDelay = 3000; // 3 seconds - reasonable default
     public int triggerBotDelay = 500; // milliseconds
     public boolean enableLogging = true;
     public boolean enableSounds = true;
+    public int inventoryThreshold = 30; // NEW: Configurable inventory threshold
 
     private static FarmHandConfig instance;
     private boolean isDirty = false;
@@ -124,15 +125,16 @@ public class FarmHandConfig {
      * Reset all settings to default values
      */
     public void resetToDefaults() {
-        enabled = false;
-        autoSellEnabled = false;
-        autoSellItemId = "minecraft:blaze_rod";
+        enabled = true;
+        autoSellEnabled = true;
+        autoSellItemId = "minecraft:diamond";
         triggerBotEnabled = false;
-        triggerBotEntityId = "minecraft:blaze";
-        autoSellDelay = 1000;
+        triggerBotEntityId = "minecraft:zombie";
+        autoSellDelay = 3000;
         triggerBotDelay = 500;
         enableLogging = true;
         enableSounds = true;
+        inventoryThreshold = 30;
         configVersion = CONFIG_VERSION;
         lastModified = System.currentTimeMillis();
 
@@ -142,20 +144,20 @@ public class FarmHandConfig {
 
     /**
      * Copy values from another config instance
-     * Now public to support the copy() method
      */
     public void copyFrom(FarmHandConfig other) {
         this.configVersion = other.configVersion != null ? other.configVersion : CONFIG_VERSION;
         this.lastModified = other.lastModified;
         this.enabled = other.enabled;
         this.autoSellEnabled = other.autoSellEnabled;
-        this.autoSellItemId = other.autoSellItemId != null ? other.autoSellItemId : "minecraft:blaze_rod";
+        this.autoSellItemId = other.autoSellItemId != null ? other.autoSellItemId : "minecraft:diamond";
         this.triggerBotEnabled = other.triggerBotEnabled;
-        this.triggerBotEntityId = other.triggerBotEntityId != null ? other.triggerBotEntityId : "minecraft:blaze";
-        this.autoSellDelay = other.autoSellDelay > 0 ? other.autoSellDelay : 1000;
+        this.triggerBotEntityId = other.triggerBotEntityId != null ? other.triggerBotEntityId : "minecraft:zombie";
+        this.autoSellDelay = other.autoSellDelay > 0 ? other.autoSellDelay : 3000;
         this.triggerBotDelay = other.triggerBotDelay > 0 ? other.triggerBotDelay : 500;
         this.enableLogging = other.enableLogging;
         this.enableSounds = other.enableSounds;
+        this.inventoryThreshold = other.inventoryThreshold > 0 ? other.inventoryThreshold : 30;
     }
 
     /**
@@ -165,7 +167,8 @@ public class FarmHandConfig {
         return isValidItemId(autoSellItemId) &&
                 isValidEntityId(triggerBotEntityId) &&
                 autoSellDelay > 0 &&
-                triggerBotDelay > 0;
+                triggerBotDelay > 0 &&
+                inventoryThreshold > 0 && inventoryThreshold <= 36;
     }
 
     /**
@@ -173,19 +176,23 @@ public class FarmHandConfig {
      */
     private void sanitizeConfig() {
         if (!isValidItemId(autoSellItemId)) {
-            autoSellItemId = "minecraft:blaze_rod";
+            autoSellItemId = "minecraft:diamond";
         }
 
         if (!isValidEntityId(triggerBotEntityId)) {
-            triggerBotEntityId = "minecraft:blaze";
+            triggerBotEntityId = "minecraft:zombie";
         }
 
         if (autoSellDelay <= 0) {
-            autoSellDelay = 1000;
+            autoSellDelay = 3000;
         }
 
         if (triggerBotDelay <= 0) {
             triggerBotDelay = 500;
+        }
+
+        if (inventoryThreshold <= 0 || inventoryThreshold > 36) {
+            inventoryThreshold = 30;
         }
     }
 
@@ -285,13 +292,16 @@ public class FarmHandConfig {
      */
     public String getConfigSummary() {
         return String.format(
-                "FarmHand Config [Version: %s, Master: %s, AutoSell: %s (%s), TriggerBot: %s (%s)]",
+                "FarmHand Config [Version: %s, Master: %s, AutoSell: %s (%s, %dms), TriggerBot: %s (%s, %dms), Threshold: %d]",
                 configVersion,
                 enabled ? "ON" : "OFF",
                 autoSellEnabled ? "ON" : "OFF",
                 autoSellItemId,
+                autoSellDelay,
                 triggerBotEnabled ? "ON" : "OFF",
-                triggerBotEntityId
+                triggerBotEntityId,
+                triggerBotDelay,
+                inventoryThreshold
         );
     }
 
@@ -308,6 +318,7 @@ public class FarmHandConfig {
                 triggerBotDelay == that.triggerBotDelay &&
                 enableLogging == that.enableLogging &&
                 enableSounds == that.enableSounds &&
+                inventoryThreshold == that.inventoryThreshold &&
                 Objects.equals(autoSellItemId, that.autoSellItemId) &&
                 Objects.equals(triggerBotEntityId, that.triggerBotEntityId);
     }
@@ -316,7 +327,7 @@ public class FarmHandConfig {
     public int hashCode() {
         return Objects.hash(enabled, autoSellEnabled, autoSellItemId,
                 triggerBotEnabled, triggerBotEntityId,
-                autoSellDelay, triggerBotDelay, enableLogging, enableSounds);
+                autoSellDelay, triggerBotDelay, enableLogging, enableSounds, inventoryThreshold);
     }
 
     @Override
