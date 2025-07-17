@@ -8,7 +8,6 @@ import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
-import net.minecraft.util.math.MathHelper;
 import org.macro.cwrmacro.config.FarmHandConfig;
 import org.macro.cwrmacro.module.AutoSellModule;
 
@@ -35,26 +34,25 @@ public class FarmHandConfigScreen extends Screen {
     private ButtonWidget resetButton;
     private ButtonWidget statusButton;
 
-    // UI Layout Constants - RESPONSIVE DESIGN
-    private static final int MIN_BUTTON_WIDTH = 180;
-    private static final int BUTTON_HEIGHT = 18;
-    private static final int MIN_FIELD_WIDTH = 150;
-    private static final int FIELD_HEIGHT = 18;
-    private static final int SMALL_FIELD_WIDTH = 70;
-    private static final int ELEMENT_SPACING = 4;
-    private static final int SECTION_SPACING = 12;
-    private static final int TOP_MARGIN = 25;
-    private static final int BOTTOM_MARGIN = 35;
-    private static final int SIDE_MARGIN = 20;
+    // Responsive Layout Variables
+    private int contentWidth;
+    private int contentHeight;
+    private int startX;
+    private int startY;
+    private int buttonWidth;
+    private int buttonHeight;
+    private int fieldWidth;
+    private int fieldHeight;
+    private int spacing;
+    private int sectionSpacing;
 
     // Colors
-    private static final int BACKGROUND_COLOR = 0xCC000000;
-    private static final int TITLE_COLOR = 0xFFFFFF;
-    private static final int SECTION_COLOR = 0xFFD700;
-    private static final int LABEL_COLOR = 0xAAAAAA;
-    private static final int ERROR_COLOR = 0xFF5555;
-    private static final int SUCCESS_COLOR = 0x55FF55;
-    private static final int VALID_FIELD_COLOR = 0x3355FF55;
+    private static final int BACKGROUND_COLOR = 0xD0000000;
+    private static final int TITLE_COLOR = 0xFFFFFFFF;
+    private static final int SECTION_COLOR = 0xFFFFD700;
+    private static final int LABEL_COLOR = 0xFFCCCCCC;
+    private static final int ERROR_COLOR = 0xFFFF5555;
+    private static final int VALID_FIELD_COLOR = 0x4455FF55;
 
     // Validation
     private static final Pattern ID_PATTERN = Pattern.compile("^[a-z0-9_]+:[a-z0-9_/]+$");
@@ -63,16 +61,9 @@ public class FarmHandConfigScreen extends Screen {
     // State
     private final List<ValidationError> validationErrors = new ArrayList<>();
     private boolean hasUnsavedChanges = false;
-    private final List<Section> sections = new ArrayList<>();
-    private int currentY;
-
-    // Responsive layout
-    private int buttonWidth;
-    private int fieldWidth;
-    private int centerX;
 
     public FarmHandConfigScreen(Screen parent) {
-        super(Text.literal("FarmHand Config"));
+        super(Text.literal("FarmHand Configuration"));
         this.parent = parent;
         this.config = FarmHandConfig.getInstance();
         this.tempConfig = config.copy();
@@ -80,76 +71,69 @@ public class FarmHandConfigScreen extends Screen {
 
     @Override
     protected void init() {
-        // Calculate responsive dimensions
-        buttonWidth = Math.max(MIN_BUTTON_WIDTH, Math.min(200, this.width - SIDE_MARGIN * 4));
-        fieldWidth = Math.max(MIN_FIELD_WIDTH, Math.min(180, this.width - SIDE_MARGIN * 4));
-        centerX = this.width / 2;
-
+        calculateLayout();
         this.validationErrors.clear();
-        this.sections.clear();
-        currentY = TOP_MARGIN;
-
-        // Ensure screen is scrollable if needed
-        int maxHeight = this.height - BOTTOM_MARGIN;
         
-        // Title
-        currentY += 15;
-
-        // General Settings Section
-        addSection("General Settings");
+        int y = startY;
         
-        this.masterToggleButton = ButtonWidget.builder(
-                        getToggleText("Master", tempConfig.enabled),
-                        button -> {
-                            tempConfig.enabled = !tempConfig.enabled;
-                            button.setMessage(getToggleText("Master", tempConfig.enabled));
-                            markAsChanged();
-                        })
-                .dimensions(centerX - buttonWidth / 2, currentY, buttonWidth, BUTTON_HEIGHT)
-                .tooltip(Tooltip.of(Text.literal("Enable/disable the entire mod")))
-                .build();
+        // Title space
+        y += 25;
+        
+        // === GENERAL SETTINGS ===
+        y += sectionSpacing;
+        
+        // Master Toggle
+        this.masterToggleButton = createToggleButton(
+            getToggleText("Master", tempConfig.enabled),
+            startX, y, buttonWidth, buttonHeight,
+            button -> {
+                tempConfig.enabled = !tempConfig.enabled;
+                button.setMessage(getToggleText("Master", tempConfig.enabled));
+                markAsChanged();
+            },
+            "Enable/disable the entire mod"
+        );
         this.addDrawableChild(masterToggleButton);
-        currentY += BUTTON_HEIGHT + SECTION_SPACING;
-
-        // Auto-Sell Section
-        addSection("Auto-Sell Module");
+        y += buttonHeight + spacing;
         
-        this.autoSellToggleButton = ButtonWidget.builder(
-                        getToggleText("Auto-Sell", tempConfig.autoSellEnabled),
-                        button -> {
-                            tempConfig.autoSellEnabled = !tempConfig.autoSellEnabled;
-                            button.setMessage(getToggleText("Auto-Sell", tempConfig.autoSellEnabled));
-                            markAsChanged();
-                        })
-                .dimensions(centerX - buttonWidth / 2, currentY, buttonWidth, BUTTON_HEIGHT)
-                .tooltip(Tooltip.of(Text.literal("Auto sell items with /sell hand")))
-                .build();
+        // === AUTO-SELL SETTINGS ===
+        y += sectionSpacing;
+        
+        // Auto-Sell Toggle
+        this.autoSellToggleButton = createToggleButton(
+            getToggleText("Auto-Sell", tempConfig.autoSellEnabled),
+            startX, y, buttonWidth, buttonHeight,
+            button -> {
+                tempConfig.autoSellEnabled = !tempConfig.autoSellEnabled;
+                button.setMessage(getToggleText("Auto-Sell", tempConfig.autoSellEnabled));
+                markAsChanged();
+            },
+            "Auto sell items with /sell hand"
+        );
         this.addDrawableChild(autoSellToggleButton);
-        currentY += BUTTON_HEIGHT + ELEMENT_SPACING;
-
-        // Item ID field
-        addFieldLabel("Item ID:");
-        this.autoSellItemField = createTextField(tempConfig.autoSellItemId, "Item ID");
+        y += buttonHeight + spacing;
+        
+        // Item ID Field
+        y += 15; // Space for label
+        this.autoSellItemField = createTextField(
+            tempConfig.autoSellItemId, "Item ID", startX, y, fieldWidth, fieldHeight
+        );
         this.autoSellItemField.setChangedListener(text -> {
             tempConfig.autoSellItemId = text;
             validateField("autoSellItem", text, "Item ID");
             markAsChanged();
         });
         this.addDrawableChild(autoSellItemField);
-        currentY += FIELD_HEIGHT + ELEMENT_SPACING;
-
-        // Delay and Threshold fields (side by side)
-        addFieldLabel("Delay (ms) / Threshold:");
+        y += fieldHeight + spacing;
         
-        this.autoSellDelayField = new TextFieldWidget(
-                this.textRenderer,
-                centerX - fieldWidth / 2,
-                currentY,
-                SMALL_FIELD_WIDTH,
-                FIELD_HEIGHT,
-                Text.literal("Delay"));
-        this.autoSellDelayField.setMaxLength(6);
-        this.autoSellDelayField.setText(String.valueOf(tempConfig.autoSellDelay));
+        // Delay and Threshold Fields (responsive side by side)
+        y += 15; // Space for label
+        int smallFieldWidth = (fieldWidth - 10) / 2;
+        
+        this.autoSellDelayField = createTextField(
+            String.valueOf(tempConfig.autoSellDelay), "Delay (ms)", 
+            startX, y, smallFieldWidth, fieldHeight
+        );
         this.autoSellDelayField.setChangedListener(text -> {
             try {
                 tempConfig.autoSellDelay = Integer.parseInt(text);
@@ -160,16 +144,11 @@ public class FarmHandConfigScreen extends Screen {
             }
         });
         this.addDrawableChild(autoSellDelayField);
-
-        this.inventoryThresholdField = new TextFieldWidget(
-                this.textRenderer,
-                centerX + 10,
-                currentY,
-                SMALL_FIELD_WIDTH,
-                FIELD_HEIGHT,
-                Text.literal("Threshold"));
-        this.inventoryThresholdField.setMaxLength(2);
-        this.inventoryThresholdField.setText(String.valueOf(tempConfig.inventoryThreshold));
+        
+        this.inventoryThresholdField = createTextField(
+            String.valueOf(tempConfig.inventoryThreshold), "Threshold", 
+            startX + smallFieldWidth + 10, y, smallFieldWidth, fieldHeight
+        );
         this.inventoryThresholdField.setChangedListener(text -> {
             try {
                 tempConfig.inventoryThreshold = Integer.parseInt(text);
@@ -180,61 +159,144 @@ public class FarmHandConfigScreen extends Screen {
             }
         });
         this.addDrawableChild(inventoryThresholdField);
-        currentY += FIELD_HEIGHT + SECTION_SPACING;
-
-        // TriggerBot Section
-        addSection("TriggerBot Module");
+        y += fieldHeight + spacing;
         
-        this.triggerBotToggleButton = ButtonWidget.builder(
-                        getToggleText("TriggerBot", tempConfig.triggerBotEnabled),
-                        button -> {
-                            tempConfig.triggerBotEnabled = !tempConfig.triggerBotEnabled;
-                            button.setMessage(getToggleText("TriggerBot", tempConfig.triggerBotEnabled));
-                            markAsChanged();
-                        })
-                .dimensions(centerX - buttonWidth / 2, currentY, buttonWidth, BUTTON_HEIGHT)
-                .tooltip(Tooltip.of(Text.literal("Auto attack entities")))
-                .build();
+        // === TRIGGERBOT SETTINGS ===
+        y += sectionSpacing;
+        
+        // TriggerBot Toggle
+        this.triggerBotToggleButton = createToggleButton(
+            getToggleText("TriggerBot", tempConfig.triggerBotEnabled),
+            startX, y, buttonWidth, buttonHeight,
+            button -> {
+                tempConfig.triggerBotEnabled = !tempConfig.triggerBotEnabled;
+                button.setMessage(getToggleText("TriggerBot", tempConfig.triggerBotEnabled));
+                markAsChanged();
+            },
+            "Auto attack entities"
+        );
         this.addDrawableChild(triggerBotToggleButton);
-        currentY += BUTTON_HEIGHT + ELEMENT_SPACING;
-
-        // Entity ID field
-        addFieldLabel("Entity ID:");
-        this.triggerBotEntityField = createTextField(tempConfig.triggerBotEntityId, "Entity ID");
+        y += buttonHeight + spacing;
+        
+        // Entity ID Field
+        y += 15; // Space for label
+        this.triggerBotEntityField = createTextField(
+            tempConfig.triggerBotEntityId, "Entity ID", startX, y, fieldWidth, fieldHeight
+        );
         this.triggerBotEntityField.setChangedListener(text -> {
             tempConfig.triggerBotEntityId = text;
             validateField("triggerBotEntity", text, "Entity ID");
             markAsChanged();
         });
         this.addDrawableChild(triggerBotEntityField);
-        currentY += FIELD_HEIGHT + ELEMENT_SPACING;
-
-        // Speed Slider - FIXED: Use proper constructor
-        addFieldLabel("Speed (0=Instant):");
+        y += fieldHeight + spacing;
+        
+        // Speed Slider
+        y += 15; // Space for label
         this.triggerBotSpeedSlider = new TriggerBotSpeedSlider(
-                centerX - fieldWidth / 2, currentY, fieldWidth, BUTTON_HEIGHT,
-                tempConfig.triggerBotSpeed / 1000.0);
+            startX, y, fieldWidth, buttonHeight, tempConfig.triggerBotSpeed / 1000.0
+        );
         this.addDrawableChild(triggerBotSpeedSlider);
-        currentY += BUTTON_HEIGHT + ELEMENT_SPACING;
-
-        // Status button
-        this.statusButton = ButtonWidget.builder(
-                        Text.literal("Show Status"),
-                        button -> showStatus())
-                .dimensions(centerX - buttonWidth / 2, currentY, buttonWidth, BUTTON_HEIGHT)
-                .tooltip(Tooltip.of(Text.literal("Show current status")))
-                .build();
+        y += buttonHeight + spacing;
+        
+        // === ACTION BUTTONS ===
+        y += sectionSpacing;
+        
+        // Status Button
+        this.statusButton = createButton(
+            Text.literal("Show Status"), startX, y, buttonWidth, buttonHeight,
+            button -> showStatus(),
+            "Show current status"
+        );
         this.addDrawableChild(statusButton);
-        currentY += BUTTON_HEIGHT + SECTION_SPACING;
-
-        // Action buttons
-        createActionButtons();
-
+        y += buttonHeight + spacing;
+        
+        // Bottom Action Buttons
+        int actionButtonWidth = (buttonWidth - 20) / 3;
+        int actionButtonSpacing = 10;
+        
+        this.cancelButton = createButton(
+            Text.literal("Cancel"), startX, y, actionButtonWidth, buttonHeight,
+            button -> this.close(), null
+        );
+        this.addDrawableChild(cancelButton);
+        
+        this.resetButton = createButton(
+            Text.literal("Reset"), startX + actionButtonWidth + actionButtonSpacing, y, 
+            actionButtonWidth, buttonHeight,
+            button -> this.resetToDefaults(), null
+        );
+        this.addDrawableChild(resetButton);
+        
+        this.doneButton = createButton(
+            Text.literal("Save"), startX + (actionButtonWidth + actionButtonSpacing) * 2, y, 
+            actionButtonWidth, buttonHeight,
+            button -> this.saveAndClose(), null
+        );
+        this.addDrawableChild(doneButton);
+        
         // Initial validation
         validateAll();
     }
 
-    // Custom slider class to handle speed settings
+    private void calculateLayout() {
+        // Calculate responsive dimensions based on screen size
+        int screenWidth = this.width;
+        int screenHeight = this.height;
+        
+        // Content area (80% of screen width, max 400px)
+        contentWidth = Math.min(400, (int)(screenWidth * 0.8));
+        contentHeight = (int)(screenHeight * 0.85);
+        
+        // Center the content
+        startX = (screenWidth - contentWidth) / 2;
+        startY = (screenHeight - contentHeight) / 2;
+        
+        // Element dimensions (responsive)
+        buttonWidth = contentWidth - 20;
+        buttonHeight = Math.max(18, screenHeight / 40);
+        fieldWidth = contentWidth - 20;
+        fieldHeight = Math.max(16, screenHeight / 45);
+        
+        // Spacing (responsive)
+        spacing = Math.max(4, screenHeight / 100);
+        sectionSpacing = Math.max(8, screenHeight / 80);
+    }
+
+    private ButtonWidget createToggleButton(Text message, int x, int y, int width, int height, 
+                                          ButtonWidget.PressAction onPress, String tooltip) {
+        ButtonWidget.Builder builder = ButtonWidget.builder(message, onPress)
+            .dimensions(x, y, width, height);
+        
+        if (tooltip != null) {
+            builder.tooltip(Tooltip.of(Text.literal(tooltip)));
+        }
+        
+        return builder.build();
+    }
+
+    private ButtonWidget createButton(Text message, int x, int y, int width, int height, 
+                                    ButtonWidget.PressAction onPress, String tooltip) {
+        ButtonWidget.Builder builder = ButtonWidget.builder(message, onPress)
+            .dimensions(x, y, width, height);
+        
+        if (tooltip != null) {
+            builder.tooltip(Tooltip.of(Text.literal(tooltip)));
+        }
+        
+        return builder.build();
+    }
+
+    private TextFieldWidget createTextField(String text, String placeholder, int x, int y, int width, int height) {
+        TextFieldWidget field = new TextFieldWidget(
+            this.textRenderer, x, y, width, height, Text.literal(placeholder)
+        );
+        field.setMaxLength(100);
+        field.setText(text);
+        return field;
+    }
+
+    // Custom slider class
     private class TriggerBotSpeedSlider extends SliderWidget {
         public TriggerBotSpeedSlider(int x, int y, int width, int height, double value) {
             super(x, y, width, height, Text.literal("Speed: " + getSpeedText((int)(value * 1000))), value);
@@ -253,70 +315,6 @@ public class FarmHandConfigScreen extends Screen {
         }
     }
 
-    private void addSection(String title) {
-        sections.add(new Section(title, currentY));
-        currentY += 20;
-    }
-
-    private void addFieldLabel(String label) {
-        currentY += 3;
-        // Label will be rendered in render() method
-        currentY += 12;
-    }
-
-    private TextFieldWidget createTextField(String text, String placeholder) {
-        TextFieldWidget field = new TextFieldWidget(
-                this.textRenderer,
-                centerX - fieldWidth / 2,
-                currentY,
-                fieldWidth,
-                FIELD_HEIGHT,
-                Text.literal(placeholder));
-        field.setMaxLength(100);
-        field.setText(text);
-        return field;
-    }
-
-    private void createActionButtons() {
-        // Ensure buttons fit on screen
-        int buttonCount = 3;
-        int totalButtonWidth = 60 * buttonCount;
-        int spacing = 8;
-        int totalWidth = totalButtonWidth + spacing * (buttonCount - 1);
-        
-        // Adjust if too wide
-        if (totalWidth > this.width - SIDE_MARGIN * 2) {
-            totalButtonWidth = (this.width - SIDE_MARGIN * 2 - spacing * (buttonCount - 1));
-            totalButtonWidth = totalButtonWidth / buttonCount;
-        } else {
-            totalButtonWidth = 60;
-        }
-
-        int startX = centerX - totalWidth / 2;
-        int y = Math.min(currentY, this.height - BOTTOM_MARGIN);
-
-        this.cancelButton = ButtonWidget.builder(
-                        Text.literal("Cancel"),
-                        button -> this.close())
-                .dimensions(startX, y, totalButtonWidth, BUTTON_HEIGHT)
-                .build();
-        this.addDrawableChild(cancelButton);
-
-        this.resetButton = ButtonWidget.builder(
-                        Text.literal("Reset"),
-                        button -> this.resetToDefaults())
-                .dimensions(startX + totalButtonWidth + spacing, y, totalButtonWidth, BUTTON_HEIGHT)
-                .build();
-        this.addDrawableChild(resetButton);
-
-        this.doneButton = ButtonWidget.builder(
-                        Text.literal("Save"),
-                        button -> this.saveAndClose())
-                .dimensions(startX + (totalButtonWidth + spacing) * 2, y, totalButtonWidth, BUTTON_HEIGHT)
-                .build();
-        this.addDrawableChild(doneButton);
-    }
-
     private String getSpeedText(int speed) {
         if (speed == 0) return "Instant";
         return speed + "ms";
@@ -324,8 +322,8 @@ public class FarmHandConfigScreen extends Screen {
 
     private Text getToggleText(String label, boolean enabled) {
         return Text.literal(label + ": ")
-                .append(Text.literal(enabled ? "ON" : "OFF")
-                        .formatted(enabled ? Formatting.GREEN : Formatting.RED));
+            .append(Text.literal(enabled ? "ON" : "OFF")
+                .formatted(enabled ? Formatting.GREEN : Formatting.RED));
     }
 
     private void validateField(String fieldId, String value, String fieldName) {
@@ -400,14 +398,13 @@ public class FarmHandConfigScreen extends Screen {
         triggerBotEntityField.setText(tempConfig.triggerBotEntityId);
         autoSellDelayField.setText(String.valueOf(tempConfig.autoSellDelay));
         inventoryThresholdField.setText(String.valueOf(tempConfig.inventoryThreshold));
-        // Create new slider with updated value
+        
+        // Recreate slider with new value
         this.remove(triggerBotSpeedSlider);
         this.triggerBotSpeedSlider = new TriggerBotSpeedSlider(
-                centerX - fieldWidth / 2, 
-                triggerBotSpeedSlider.getY(), 
-                fieldWidth, 
-                BUTTON_HEIGHT,
-                tempConfig.triggerBotSpeed / 1000.0);
+            startX, triggerBotSpeedSlider.getY(), fieldWidth, buttonHeight,
+            tempConfig.triggerBotSpeed / 1000.0
+        );
         this.addDrawableChild(triggerBotSpeedSlider);
 
         masterToggleButton.setMessage(getToggleText("Master", tempConfig.enabled));
@@ -420,7 +417,6 @@ public class FarmHandConfigScreen extends Screen {
             return;
         }
 
-        // Copy temp config back to main config
         config.enabled = tempConfig.enabled;
         config.autoSellEnabled = tempConfig.autoSellEnabled;
         config.triggerBotEnabled = tempConfig.triggerBotEnabled;
@@ -437,84 +433,81 @@ public class FarmHandConfigScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        // Render dark background
+        // Background
         context.fill(0, 0, this.width, this.height, BACKGROUND_COLOR);
-
-        // Render title
-        context.drawCenteredTextWithShadow(this.textRenderer, this.title, centerX, 15, TITLE_COLOR);
-
-        // Render sections
-        for (Section section : sections) {
-            context.drawCenteredTextWithShadow(
-                    this.textRenderer,
-                    Text.literal(section.title).formatted(Formatting.BOLD),
-                    centerX,
-                    section.y,
-                    SECTION_COLOR);
-        }
-
-        // Render field labels
-        int labelY = TOP_MARGIN + 35 + BUTTON_HEIGHT + SECTION_SPACING + 23;
-        renderFieldLabel(context, "Item ID:", labelY, hasError("autoSellItem"));
         
-        labelY += FIELD_HEIGHT + ELEMENT_SPACING + 15;
-        renderFieldLabel(context, "Delay/Threshold:", labelY, hasError("autoSellDelay") || hasError("inventoryThreshold"));
+        // Content background
+        context.fill(startX - 10, startY - 10, startX + contentWidth + 10, startY + contentHeight + 10, 0x88000000);
         
-        labelY += FIELD_HEIGHT + SECTION_SPACING + 23 + BUTTON_HEIGHT + ELEMENT_SPACING + 15;
-        renderFieldLabel(context, "Entity ID:", labelY, hasError("triggerBotEntity"));
+        // Title
+        context.drawCenteredTextWithShadow(
+            this.textRenderer, this.title, this.width / 2, startY + 10, TITLE_COLOR
+        );
         
-        labelY += FIELD_HEIGHT + ELEMENT_SPACING + 15;
-        renderFieldLabel(context, "Speed:", labelY, false);
-
-        // Render field backgrounds (validation indicators)
-        if (!hasError("autoSellItem") && !autoSellItemField.getText().isEmpty()) {
-            highlightField(context, autoSellItemField);
-        }
-        if (!hasError("triggerBotEntity") && !triggerBotEntityField.getText().isEmpty()) {
-            highlightField(context, triggerBotEntityField);
-        }
-
+        // Section headers
+        int y = startY + 35 + sectionSpacing;
+        drawSectionHeader(context, "General Settings", y - 15);
+        
+        y += buttonHeight + spacing + sectionSpacing;
+        drawSectionHeader(context, "Auto-Sell Module", y - 15);
+        
+        y += buttonHeight + spacing + 15 + fieldHeight + spacing + 15 + fieldHeight + spacing + sectionSpacing;
+        drawSectionHeader(context, "TriggerBot Module", y - 15);
+        
+        // Field labels
+        y = startY + 35 + sectionSpacing + buttonHeight + spacing + sectionSpacing + buttonHeight + spacing;
+        drawFieldLabel(context, "Item ID (hold when selling):", y, hasError("autoSellItem"));
+        
+        y += 15 + fieldHeight + spacing;
+        drawFieldLabel(context, "Delay (ms) / Threshold (slots):", y, 
+            hasError("autoSellDelay") || hasError("inventoryThreshold"));
+        
+        y += 15 + fieldHeight + spacing + sectionSpacing + buttonHeight + spacing;
+        drawFieldLabel(context, "Entity ID:", y, hasError("triggerBotEntity"));
+        
+        y += 15 + fieldHeight + spacing;
+        drawFieldLabel(context, "Attack Speed (0=Instant):", y, false);
+        
         // Render all widgets
         super.render(context, mouseX, mouseY, delta);
-
-        // Render validation errors (compact)
+        
+        // Validation errors
         if (!validationErrors.isEmpty()) {
-            int errorY = this.height - 45;
+            int errorY = startY + contentHeight - 30;
             for (ValidationError error : validationErrors) {
                 context.drawCenteredTextWithShadow(
-                        this.textRenderer,
-                        Text.literal("✗ " + error.message).formatted(Formatting.RED),
-                        centerX,
-                        errorY,
-                        ERROR_COLOR);
-                errorY -= 12;
+                    this.textRenderer,
+                    Text.literal("✗ " + error.message).formatted(Formatting.RED),
+                    this.width / 2, errorY, ERROR_COLOR
+                );
+                errorY -= 15;
             }
         }
-
-        // Render status
+        
+        // Status
         if (hasUnsavedChanges) {
             context.drawCenteredTextWithShadow(
-                    this.textRenderer,
-                    Text.literal("Unsaved changes").formatted(Formatting.YELLOW, Formatting.ITALIC),
-                    centerX,
-                    this.height - 10,
-                    0xFFFF55);
+                this.textRenderer,
+                Text.literal("Unsaved changes").formatted(Formatting.YELLOW, Formatting.ITALIC),
+                this.width / 2, startY + contentHeight - 5, 0xFFFFFF55
+            );
         }
     }
 
-    private void highlightField(DrawContext context, TextFieldWidget field) {
-        context.fill(field.getX() - 1, field.getY() - 1,
-                field.getX() + field.getWidth() + 1, field.getY() + field.getHeight() + 1,
-                VALID_FIELD_COLOR);
+    private void drawSectionHeader(DrawContext context, String title, int y) {
+        context.drawCenteredTextWithShadow(
+            this.textRenderer,
+            Text.literal(title).formatted(Formatting.BOLD, Formatting.GOLD),
+            this.width / 2, y, SECTION_COLOR
+        );
     }
 
-    private void renderFieldLabel(DrawContext context, String label, int y, boolean hasError) {
+    private void drawFieldLabel(DrawContext context, String label, int y, boolean hasError) {
         context.drawTextWithShadow(
-                this.textRenderer,
-                Text.literal(label).formatted(hasError ? Formatting.RED : Formatting.WHITE),
-                centerX - fieldWidth / 2,
-                y,
-                hasError ? ERROR_COLOR : LABEL_COLOR);
+            this.textRenderer,
+            Text.literal(label).formatted(hasError ? Formatting.RED : Formatting.WHITE),
+            startX, y, hasError ? ERROR_COLOR : LABEL_COLOR
+        );
     }
 
     private boolean hasError(String fieldId) {
@@ -534,16 +527,6 @@ public class FarmHandConfigScreen extends Screen {
     }
 
     // Helper classes
-    private static class Section {
-        final String title;
-        final int y;
-
-        Section(String title, int y) {
-            this.title = title;
-            this.y = y;
-        }
-    }
-
     private static class ValidationError {
         final String fieldId;
         final String message;
