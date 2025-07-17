@@ -7,9 +7,6 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.registry.Registries;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.hit.EntityHitResult;
@@ -26,7 +23,7 @@ public class TriggerBotModule {
     private static final AtomicBoolean isAttacking = new AtomicBoolean(false);
     private static final AtomicLong lastAttackTime = new AtomicLong(0);
     private static final AtomicLong attackCount = new AtomicLong(0);
-    private static final long MIN_ATTACK_INTERVAL = 100; // Minimum 100ms between attacks
+    private static final long MIN_ATTACK_INTERVAL = 10; // Very fast minimum interval
     private static volatile int debugTickCount = 0;
 
     public static void register() {
@@ -44,12 +41,12 @@ public class TriggerBotModule {
     private static void processTick(MinecraftClient client) {
         FarmHandConfig config = FarmHandConfig.getInstance();
 
-        // Debug logging every 10 seconds (200 ticks)
+        // Debug logging every 20 seconds (400 ticks) - less frequent
         debugTickCount++;
-        if (debugTickCount % 200 == 0 && config.enableLogging) {
+        if (debugTickCount % 400 == 0 && config.enableLogging) {
             debugTickCount = 0;
             logDebug("TriggerBot Status: Enabled=" + config.enabled + " TriggerBotEnabled=" + config.triggerBotEnabled + 
-                    " Attacking=" + isAttacking.get());
+                    " Speed=" + config.triggerBotSpeed);
         }
 
         // Check if module is enabled
@@ -67,8 +64,8 @@ public class TriggerBotModule {
             return;
         }
 
-        // Check attack cooldown
-        if (player.getAttackCooldownProgress(0.5F) < 1.0F) {
+        // Check attack cooldown - if speed is 0 (instant), skip cooldown check
+        if (config.triggerBotSpeed > 0 && player.getAttackCooldownProgress(0.5F) < 1.0F) {
             return;
         }
 
@@ -85,7 +82,7 @@ public class TriggerBotModule {
             return;
         }
 
-        // Start attack process with human-like delay
+        // Start attack process
         startAttackProcess(client, player, targetEntity, config);
     }
 
@@ -119,36 +116,21 @@ public class TriggerBotModule {
 
         lastAttackTime.set(System.currentTimeMillis());
 
+        // If speed is 0, attack instantly
+        if (config.triggerBotSpeed == 0) {
+            executeAttack(client, target);
+            isAttacking.set(false);
+            return;
+        }
+
+        // Otherwise use configured delay
         CompletableFuture.runAsync(() -> {
             try {
-                // Human-like reaction delay based on config
-                int delay = config.triggerBotDelay / 2 + ThreadLocalRandom.current().nextInt(config.triggerBotDelay / 2);
+                // Use configured speed as delay
+                int delay = config.triggerBotSpeed + ThreadLocalRandom.current().nextInt(50); // Small random variance
                 Thread.sleep(delay);
 
-                // Execute attack on main thread
-                client.execute(() -> {
-                    if (client.player != null && client.interactionManager != null) {
-                        // Double-check cooldown and target validity
-                        if (client.player.getAttackCooldownProgress(0.5F) >= 1.0F &&
-                            target.isAlive() && !target.isRemoved()) {
-
-                            // Attack the entity
-                            client.interactionManager.attackEntity(client.player, target);
-                            client.player.swingHand(Hand.MAIN_HAND);
-                            
-                            attackCount.incrementAndGet();
-                            
-                            if (config.enableLogging) {
-                                logInfo("Attacked " + target.getType().getUntranslatedName() + " (Total: " + attackCount.get() + ")");
-                            }
-
-                            // Play attack sound if enabled
-                            if (config.enableSounds) {
-                                client.player.playSound(SoundEvents.ENTITY_PLAYER_ATTACK_SWEEP, 0.3f, 1.0f);
-                            }
-                        }
-                    }
-                });
+                executeAttack(client, target);
 
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -161,21 +143,20 @@ public class TriggerBotModule {
         });
     }
 
-    private static void logInfo(String message) {
-        CWRXPMactro.LOGGER.info("[TriggerBot] " + message);
-
-        // Send info message to player if logging is enabled
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player != null) {
-            client.execute(() -> {
-                if (client.player != null) {
-                    client.player.sendMessage(
-                            Text.literal("[TriggerBot] " + message).formatted(Formatting.BLUE),
-                            false
-                    );
+    private static void executeAttack(MinecraftClient client, Entity target) {
+        client.execute(() -> {
+            if (client.player != null && client.interactionManager != null) {
+                // Double-check target validity
+                if (target.isAlive() && !target.isRemoved()) {
+                    // Attack the entity
+                    client.interactionManager.attackEntity(client.player, target);
+                    client.player.swingHand(Hand.MAIN_HAND);
+                    
+                    attackCount.incrementAndGet();
+                    // REMOVED: No more attack messages spam
                 }
-            });
-        }
+            }
+        });
     }
 
     private static void logDebug(String message) {
@@ -208,9 +189,9 @@ public class TriggerBotModule {
     public static String getStatusSummary() {
         FarmHandConfig config = FarmHandConfig.getInstance();
         return String.format(
-                "TriggerBot Status: %s | Attacking: %s | Attacks: %d | Target: %s",
+                "TriggerBot Status: %s | Speed: %s | Attacks: %d | Target: %s",
                 config.triggerBotEnabled ? "ENABLED" : "DISABLED",
-                isAttacking.get() ? "YES" : "NO",
+                config.triggerBotSpeed == 0 ? "INSTANT" : config.triggerBotSpeed + "ms",
                 attackCount.get(),
                 config.triggerBotEntityId
         );
