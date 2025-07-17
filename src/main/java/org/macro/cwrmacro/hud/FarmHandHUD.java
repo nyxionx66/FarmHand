@@ -4,6 +4,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import org.macro.cwrmacro.config.FarmHandConfig;
@@ -20,7 +21,7 @@ public class FarmHandHUD {
         HudRenderCallback.EVENT.register(FarmHandHUD::renderHUD);
     }
 
-    private static void renderHUD(DrawContext context, float tickDelta) {
+    private static void renderHUD(DrawContext context, RenderTickCounter tickCounter) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) {
             return;
